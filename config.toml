@@ -2,8 +2,7 @@ enable-module-update = true
 parallel-jobs = 1
 
 # Build only Magisk/KernelSU modules for the requested apps.
-# Twitter follows Piko's latest stable release; Instagram keeps using the
-# newest pre-release bundle for its newer compatibility fixes.
+# Twitter and Instagram follow Piko's latest stable release.
 
 [YouTube-Morphe]
 app-name = "YouTube"
@@ -34,7 +33,7 @@ included-patches = "'Bring back twitter'"
 app-name = "Instagram"
 pkg-name = "com.instagram.android"
 patches-source = "crimera/piko"
-patches-version = "dev"
+patches-version = "latest"
 cli-source = "MorpheApp/morphe-cli"
 rv-brand = "Piko"
 build-mode = "module"
