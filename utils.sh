@@ -481,38 +481,8 @@ dl_uptodown() {
 	versionURL=$(jq -e -r '.url + "/" + .extraURL + "/" + (.versionID | tostring)' <<<"$versionURL")
 	resp=$(req "$versionURL" -) || return 1
 
-	local data_version files node_arch="" data_file_id node_class page_arch page_info
-	data_version=$($HTMLQ '.button.variants' --attribute data-version <<<"$resp") || return 1
-	# The versions API already points at a concrete file. Prefer that file when
-	# its architecture matches instead of replacing it with the first (and often
-	# older) item from the variants dialog.
-	page_info=$($HTMLQ --text --ignore-whitespace 'table.content tr > th + td' <<<"$resp")
-	for node_arch in "${apparch[@]}"; do
-		if grep -Fxq "$node_arch" <<<"$page_info"; then
-			page_arch=$node_arch
-			break
-		fi
-	done
-	if [ "$data_version" ] && [ -z "$page_arch" ]; then
-		files=$(req "${uptodown_dlurl%/*}/app/${data_code}/version/${data_version}/files" - | jq -e -r .content) || return 1
-		for ((n = 1; n < 200; n += 1)); do
-			node_class=$($HTMLQ -w -t ".content > :nth-child($n)" --attribute class <<<"$files") || return 1
-			if [ -z "$node_class" ] && [ -z "$($HTMLQ -w -t ".content > :nth-child($n)" <<<"$files")" ]; then break; fi
-			if [ "$node_class" != "variant" ]; then
-				node_arch=$($HTMLQ -w -t ".content > :nth-child($n)" <<<"$files" | xargs) || return 1
-				continue
-			fi
-			if [ -z "$node_arch" ]; then return 1; fi
-			if ! isoneof "$node_arch" "${apparch[@]}"; then continue; fi
-
-			file_type=$($HTMLQ -w -t ".content > :nth-child($n) > .v-file > span" <<<"$files") || return 1
-			if [ "$file_type" = "xapk" ]; then is_bundle=true; else is_bundle=false; fi
-			data_file_id=$($HTMLQ ".content > :nth-child($n) > .v-report" --attribute data-file-id <<<"$files") || return 1
-			resp=$(req "${uptodown_dlurl}/download/${data_file_id}-x" -)
-			break
-		done
-		if [ -z "$data_file_id" ]; then return 1; fi
-	fi
+	# versionURL already identifies Uptodown's concrete file for this version.
+	# Re-scraping the variants dialog is both unnecessary and brittle.
 	local data_url
 	data_url=$($HTMLQ "#detail-download-button" --attribute data-url <<<"$resp") || return 1
 	if [ $is_bundle = true ]; then
@@ -589,6 +559,43 @@ patch_apk() {
 		rm "$patched_apk" 2>/dev/null || :
 		return 1
 	fi
+}
+
+replace_app_label() {
+	local apk=$1 label=$2
+	local editor="$TEMP_DIR/apkeditor.jar"
+	local decoded="${apk}-label-src" rebuilt="${apk}-label-unsigned" signed="${apk}-label-signed"
+
+	gh_dl "$editor" "https://github.com/REAndroid/APKEditor/releases/download/V1.4.7/APKEditor-1.4.7.jar" >/dev/null || return 1
+	rm -rf "$decoded" "$rebuilt" "$signed" || :
+	if ! java -Xmx512m -jar "$editor" decode -t xml -dex -i "$apk" -o "$decoded" -f >/dev/null; then
+		epr "Could not decode $apk to change its app label"
+		return 1
+	fi
+
+	local changed=0 strings_file
+	while IFS= read -r strings_file; do
+		if grep -q '<string name="app_name">' "$strings_file"; then
+			sed -i 's#<string name="app_name">[^<]*</string>#<string name="app_name">'"$label"'</string>#g' "$strings_file"
+			changed=1
+		fi
+	done < <(find "$decoded/resources" -type f -path '*/res/values*/strings.xml')
+	if [ "$changed" -ne 1 ]; then
+		epr "Could not find string/app_name in $apk"
+		return 1
+	fi
+
+	if ! java -Xmx512m -jar "$editor" build -i "$decoded" -o "$rebuilt" -f >/dev/null; then
+		epr "Could not rebuild $apk after changing its app label"
+		return 1
+	fi
+	if ! java -jar "$APKSIGNER" sign --ks ks-p12.keystore --ks-pass pass:123456789 --key-pass pass:123456789 --ks-key-alias jhc \
+		--out "$signed" "$rebuilt"; then
+		epr "Could not sign $apk after changing its app label"
+		return 1
+	fi
+	mv -f "$signed" "$apk"
+	rm -rf "$decoded" "$rebuilt" "${signed}.idsig" || :
 }
 
 check_sig() {
@@ -770,6 +777,10 @@ build_rv() {
 				epr "Building '${table}' failed!"
 				return 0
 			fi
+			if [ -n "${args[app_label]}" ] && ! replace_app_label "$patched_apk" "${args[app_label]}"; then
+				epr "Changing app label for '${table}' failed!"
+				return 0
+			fi
 		fi
 		rm "$stock_apk_to_patch"
 		if [ "$build_mode" = apk ]; then
@@ -821,6 +832,13 @@ build_rv() {
 				else
 					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -d "${base_template}/stock/" >/dev/null 2>&1
 				fi
+				if [ ! -f "${base_template}/stock/base.apk" ] && [ -f "${base_template}/stock/${pkg_name}.apk" ]; then
+					mv -f "${base_template}/stock/${pkg_name}.apk" "${base_template}/stock/base.apk"
+				fi
+				if [ ! -f "${base_template}/stock/base.apk" ]; then
+					epr "Could not identify the base stock APK for $table"
+					return 0
+				fi
 			fi
 		fi
 
@@ -850,7 +868,7 @@ module_prop() {
 name=${2}
 version=v${3}
 versionCode=${NEXT_VER_CODE}
-author=j-hc
+author=KimPig
 description=${4}" >"${6}/module.prop"
 
 	if [ "$ENABLE_MODULE_UPDATE" = true ]; then echo "updateJson=${5}" >>"${6}/module.prop"; fi

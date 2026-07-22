@@ -31,6 +31,7 @@ cli-version = "v5.0.0"       # 'latest', 'dev', or a version number. default: "l
 
 [Some-App]
 app-name = "SomeApp" # if set, release name becomes SomeApp instead of Some-App. default is same as table name, which is 'Some-App' here.
+app-label = "Some App" # optional post-patch string/app_name override, including localized variants. default: unchanged
 enabled = true       # whether to build the app. default: true
 build-mode = "apk"   # 'both', 'apk' or 'module'. default: apk
 
