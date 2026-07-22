@@ -461,12 +461,16 @@ dl_uptodown() {
 		apparch+=("$arch")
 	fi
 
-	local op resp data_code
+	local op resp data_code page_count
 	data_code=$($HTMLQ "#detail-app-name" --attribute data-code <<<"$__UPTODOWN_RESP__")
 	local versionURL=""
 	local is_bundle=false
-	for i in {1..20}; do
-		resp=$(req "${uptodown_dlurl}/apps/${data_code}/versions/${i}" -)
+	# Popular apps can have dozens of variants for every release. Do not assume
+	# that the requested version is present in the first 20 API pages.
+	for ((i = 1; i <= 100; i += 1)); do
+		resp=$(req "${uptodown_dlurl}/apps/${data_code}/versions/${i}" -) || continue
+		page_count=$(jq -e -r '.data | length' <<<"$resp") || continue
+		if [ "$page_count" -eq 0 ]; then break; fi
 		if ! op=$(jq -e -r ".data | map(select(.version == \"${version}\")) | .[0]" <<<"$resp"); then
 			continue
 		fi
@@ -477,12 +481,23 @@ dl_uptodown() {
 	versionURL=$(jq -e -r '.url + "/" + .extraURL + "/" + (.versionID | tostring)' <<<"$versionURL")
 	resp=$(req "$versionURL" -) || return 1
 
-	local data_version files node_arch="" data_file_id node_class
+	local data_version files node_arch="" data_file_id node_class page_arch page_info
 	data_version=$($HTMLQ '.button.variants' --attribute data-version <<<"$resp") || return 1
-	if [ "$data_version" ]; then
+	# The versions API already points at a concrete file. Prefer that file when
+	# its architecture matches instead of replacing it with the first (and often
+	# older) item from the variants dialog.
+	page_info=$($HTMLQ --text --ignore-whitespace 'table.content tr > th + td' <<<"$resp")
+	for node_arch in "${apparch[@]}"; do
+		if grep -Fxq "$node_arch" <<<"$page_info"; then
+			page_arch=$node_arch
+			break
+		fi
+	done
+	if [ "$data_version" ] && [ -z "$page_arch" ]; then
 		files=$(req "${uptodown_dlurl%/*}/app/${data_code}/version/${data_version}/files" - | jq -e -r .content) || return 1
-		for ((n = 1; n < 12; n += 1)); do
+		for ((n = 1; n < 200; n += 1)); do
 			node_class=$($HTMLQ -w -t ".content > :nth-child($n)" --attribute class <<<"$files") || return 1
+			if [ -z "$node_class" ] && [ -z "$($HTMLQ -w -t ".content > :nth-child($n)" <<<"$files")" ]; then break; fi
 			if [ "$node_class" != "variant" ]; then
 				node_arch=$($HTMLQ -w -t ".content > :nth-child($n)" <<<"$files" | xargs) || return 1
 				continue
@@ -496,7 +511,7 @@ dl_uptodown() {
 			resp=$(req "${uptodown_dlurl}/download/${data_file_id}-x" -)
 			break
 		done
-		if [ $n -eq 12 ]; then return 1; fi
+		if [ -z "$data_file_id" ]; then return 1; fi
 	fi
 	local data_url
 	data_url=$($HTMLQ "#detail-download-button" --attribute data-url <<<"$resp") || return 1
