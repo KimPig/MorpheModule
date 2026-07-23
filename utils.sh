@@ -160,12 +160,41 @@ get_prebuilts() {
 
 set_prebuilts() {
 	APKSIGNER="${BIN_DIR}/apksigner.jar"
-	local arch
+	local arch sdk_root candidate system_aapt2=""
+	local -a sdk_roots
 	arch=$(uname -m)
 	if [ "$arch" = aarch64 ]; then arch=arm64; elif [ "${arch:0:5}" = "armv7" ]; then arch=arm; fi
 	HTMLQ="${BIN_DIR}/htmlq/htmlq-${arch}"
 	AAPT2="${BIN_DIR}/aapt2/aapt2-${arch}"
 	TOML="${BIN_DIR}/toml/tq-${arch}"
+
+	# The repository only bundles Android-targeted aapt2 binaries. GitHub's
+	# x86_64 runner already provides an Android SDK, so use its newest build
+	# tool when a matching bundled binary does not exist.
+	if [ ! -x "$AAPT2" ]; then
+		system_aapt2=$(command -v aapt2 2>/dev/null || :)
+		if [ ! -x "$system_aapt2" ]; then
+			sdk_roots=("${ANDROID_HOME-}" "${ANDROID_SDK_ROOT-}" "${HOME-}/Android/Sdk" "${HOME-}/Library/Android/sdk")
+			if [ -n "${LOCALAPPDATA-}" ]; then sdk_roots+=("${LOCALAPPDATA}/Android/Sdk"); fi
+			for sdk_root in "${sdk_roots[@]}"; do
+				[ -n "$sdk_root" ] || continue
+				if command -v cygpath >/dev/null 2>&1; then
+					sdk_root=$(cygpath -u "$sdk_root" 2>/dev/null || printf '%s' "$sdk_root")
+				fi
+				[ -d "$sdk_root/build-tools" ] || continue
+				candidate=$(find "$sdk_root/build-tools" -mindepth 2 -maxdepth 2 -type f \
+					\( -name aapt2 -o -name aapt2.exe \) 2>/dev/null | sort -V | tail -n 1)
+				if [ -x "$candidate" ]; then
+					system_aapt2=$candidate
+					break
+				fi
+			done
+		fi
+		if [ ! -x "$system_aapt2" ]; then
+			abort "No executable aapt2 was found for host architecture '${arch}'. Install Android SDK build-tools or add aapt2 to PATH."
+		fi
+		AAPT2=$system_aapt2
+	fi
 }
 
 config_update() {
@@ -604,10 +633,20 @@ check_sig() {
 check_package_version() {
 	local file=$1 expected_pkg=$2 expected_version=$3
 	local package_line actual_pkg actual_version
-	package_line=$("$AAPT2" dump badging "$file" 2>/dev/null | grep -m1 "^package: name=") || return 1
+	if [ ! -x "$AAPT2" ]; then
+		epr "aapt2 is not executable: '$AAPT2'"
+		return 1
+	fi
+	if ! package_line=$("$AAPT2" dump badging "$file" 2>/dev/null | grep -m1 "^package: name="); then
+		wpr "Could not read package metadata from '$(basename "$file")' with '$AAPT2'"
+		return 1
+	fi
 	actual_pkg=${package_line#*name=\'} actual_pkg=${actual_pkg%%\'*}
 	actual_version=${package_line#*versionName=\'} actual_version=${actual_version%%\'*}
-	[ "$actual_pkg" = "$expected_pkg" ] && [ "$actual_version" = "$expected_version" ]
+	if [ "$actual_pkg" != "$expected_pkg" ] || [ "$actual_version" != "$expected_version" ]; then
+		wpr "Package metadata mismatch in '$(basename "$file")': got '${actual_pkg}' '${actual_version}', expected '${expected_pkg}' '${expected_version}'"
+		return 1
+	fi
 }
 
 check_apk_arch() {
