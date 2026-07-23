@@ -8,12 +8,9 @@ Use [zygisk-detach](https://github.com/j-hc/zygisk-detach) to detach YouTube and
 
 [MorpheModule](https://github.com/KimPig/MorpheModule)
   
-Patches: crimera/patches-3.7.0.mpp  
-[Changelog](https://github.com/crimera/piko/releases/tag/v3.7.0)
+Patches: crimera/patches-3.8.0-dev.6.mpp  
+[Changelog](https://github.com/crimera/piko/releases/tag/v3.8.0-dev.6)
 
 CLI: MorpheApp/morphe-desktop-1.12.0-all.jar  
-Patches: crimera/patches-3.8.0-dev.5.mpp  
-[Changelog](https://github.com/crimera/piko/releases/tag/v3.8.0-dev.5)
-
 Patches: MorpheApp/patches-1.36.0.mpp  
 [Changelog](https://github.com/MorpheApp/morphe-patches/releases/tag/v1.36.0)  

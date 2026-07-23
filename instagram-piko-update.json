@@ -1,6 +1,6 @@
 {
-  "version": "v435.0.0.37.76 (patches 3.7.0.mpp)",
-  "versionCode": 1,
-  "zipUrl": "https://github.com/KimPig/MorpheModule/releases/download/1/instagram-piko-module-v435.0.0.37.76-arm64-v8a.zip",
+  "version": "v435.0.0.37.76 (patches dev.6.mpp)",
+  "versionCode": 5,
+  "zipUrl": "https://github.com/KimPig/MorpheModule/releases/download/5/instagram-piko-module-v435.0.0.37.76-arm64-v8a.zip",
   "changelog": "https://raw.githubusercontent.com/KimPig/MorpheModule/update/build.md"
 }
