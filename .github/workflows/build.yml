@@ -73,7 +73,20 @@ jobs:
       - name: Verify complete output set
         shell: bash
         run: |
-          for APP in youtube-morphe youtube-music-morphe twitter-piko instagram-piko; do
+          if [ -f "config.json" ]; then
+            mapfile -t APPS < <(
+              jq -r 'to_entries[] |
+                select(.value | type == "object") |
+                .key | ascii_downcase | gsub(" "; "-")' config.json
+            )
+          else
+            APPS=(youtube-morphe youtube-music-morphe twitter-piko instagram-piko)
+          fi
+          if [ "${#APPS[@]}" -eq 0 ]; then
+            echo "::error::No configured apps were found"
+            exit 1
+          fi
+          for APP in "${APPS[@]}"; do
             compgen -G "build/${APP}-v*.apk" >/dev/null ||
               { echo "::error::Missing ${APP} APK"; exit 1; }
             compgen -G "build/${APP}-module-v*.zip" >/dev/null ||
