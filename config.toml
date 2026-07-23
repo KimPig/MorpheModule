@@ -2,8 +2,8 @@ enable-module-update = true
 parallel-jobs = 1
 
 # Build both KernelSU/Magisk modules and directly installable APKs.
-# Twitter and Instagram try the pinned stock asset first, then APKMirror,
-# then Uptodown. A failure from every configured source fails the whole build.
+# Twitter and Instagram use the pinned Piko development release until the
+# stable compatibility issue is resolved. Their stock APKs are pinned separately.
 
 [YouTube-Morphe]
 app-name = "YouTube"
@@ -34,7 +34,7 @@ archive-dlurl = "https://archive.org/download/jhc-apks/apks/com.google.android.a
 app-name = "Twitter"
 pkg-name = "com.twitter.android"
 patches-source = "crimera/piko"
-patches-version = "v3.8.0-dev.5"
+patches-version = "v3.8.0-dev.6"
 cli-source = "MorpheApp/morphe-cli"
 rv-brand = "Piko"
 build-mode = "both"
@@ -52,7 +52,7 @@ included-patches = "'Bring back twitter'"
 app-name = "Instagram"
 pkg-name = "com.instagram.android"
 patches-source = "crimera/piko"
-patches-version = "v3.7.0"
+patches-version = "v3.8.0-dev.6"
 cli-source = "MorpheApp/morphe-cli"
 rv-brand = "Piko"
 build-mode = "both"
