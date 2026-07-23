@@ -57,7 +57,16 @@ abort() {
 	kill -9 -- -$$ 2>/dev/null
 	exit 1
 }
-java() { env -i java --enable-native-access=ALL-UNNAMED "$@"; }
+java() {
+	local java_bin
+	java_bin=$(type -P java) || {
+		epr "Java executable was not found in PATH"
+		return 1
+	}
+	# Resolve Java before clearing the environment. Otherwise `env -i java`
+	# falls back to the runner's system JDK and bypasses actions/setup-java.
+	env -i "$java_bin" --enable-native-access=ALL-UNNAMED "$@"
+}
 
 get_prebuilts() {
 	local cli_src=$1 cli_ver=$2 patches_src=$3 patches_ver=$4
