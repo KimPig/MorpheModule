@@ -15,6 +15,8 @@ fi
 jq --version >/dev/null || abort "\`jq\` is not installed. install it with 'apt install jq' or equivalent"
 java --version >/dev/null || abort "\`openjdk 17\` is not installed. install it with 'apt install openjdk-17-jre' or equivalent"
 zip --version >/dev/null || abort "\`zip\` is not installed. install it with 'apt install zip' or equivalent"
+python3 -c "import bs4, cloudscraper" >/dev/null 2>&1 ||
+	abort "\`beautifulsoup4\` and \`cloudscraper\` are not installed. run 'python3 -m pip install -r requirements-apkmirror.txt'"
 
 set_prebuilts
 

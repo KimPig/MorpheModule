@@ -1,4 +1,5 @@
 *.apk
+*.apkm
 *.zip
 /temp
 /build
