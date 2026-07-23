@@ -15,8 +15,8 @@ fi
 jq --version >/dev/null || abort "\`jq\` is not installed. install it with 'apt install jq' or equivalent"
 java --version >/dev/null || abort "\`openjdk 17\` is not installed. install it with 'apt install openjdk-17-jre' or equivalent"
 zip --version >/dev/null || abort "\`zip\` is not installed. install it with 'apt install zip' or equivalent"
-python3 -c "import bs4, cloudscraper" >/dev/null 2>&1 ||
-	abort "\`beautifulsoup4\` and \`cloudscraper\` are not installed. run 'python3 -m pip install -r requirements-apkmirror.txt'"
+python3 -c "import bs4, requests" >/dev/null 2>&1 ||
+	abort "\`beautifulsoup4\` and \`requests\` are not installed. run 'python3 -m pip install -r requirements-apkmirror.txt'"
 
 set_prebuilts
 
@@ -43,6 +43,8 @@ if [ "${2-}" = "--config-update" ]; then
 fi
 
 : >build.md
+BUILD_FAILURES="${TEMP_DIR}/build-failures"
+: >"$BUILD_FAILURES"
 ENABLE_MODULE_UPDATE=$(toml_get "$main_config_t" enable-module-update) || ENABLE_MODULE_UPDATE=true
 if [ "$ENABLE_MODULE_UPDATE" = true ] && [ -z "${GITHUB_REPOSITORY-}" ]; then
 	pr "You are building locally. Module updates will not be enabled."
@@ -61,6 +63,12 @@ gh_dl "${MODULE_TEMPLATE_DIR}/bin/arm/cmpr" "https://github.com/j-hc/cmpr/releas
 gh_dl "${MODULE_TEMPLATE_DIR}/bin/x86/cmpr" "https://github.com/j-hc/cmpr/releases/latest/download/cmpr-x86"
 gh_dl "${MODULE_TEMPLATE_DIR}/bin/x64/cmpr" "https://github.com/j-hc/cmpr/releases/latest/download/cmpr-x86_64"
 
+run_build() (
+	local build_label=$1 declared_args=$2 status
+	trap 'status=$?; trap - EXIT; if [ "$status" -ne 0 ]; then printf "%s\n" "$build_label" >>"$BUILD_FAILURES"; fi; exit "$status"' EXIT
+	build_rv "$declared_args"
+)
+
 idx=0
 for table_name in $(toml_get_table_names); do
 	if [ -z "$table_name" ]; then continue; fi
@@ -69,10 +77,11 @@ for table_name in $(toml_get_table_names); do
 	vtf "$enabled" "enabled"
 	if [ "$enabled" = false ]; then continue; fi
 	if ((idx >= PARALLEL_JOBS)); then
-		wait -n
+		wait -n || :
 		idx=$((idx - 1))
 	fi
 
+	unset app_args
 	declare -A app_args
 	patches_src=$(toml_get "$t" patches-source) || patches_src=$DEF_PATCHES_SRC
 	patches_ver=$(toml_get "$t" patches-version) || patches_ver=$DEF_PATCHES_VER
@@ -81,6 +90,7 @@ for table_name in $(toml_get_table_names); do
 
 	if ! PREBUILTS="$(get_prebuilts "$cli_src" "$cli_ver" "$patches_src" "$patches_ver")"; then
 		epr "Could not get prebuilts"
+		printf "%s\n" "$table_name (prebuilts)" >>"$BUILD_FAILURES"
 		continue
 	fi
 	read -r patches_jar cli_jar <<<"$PREBUILTS"
@@ -137,16 +147,16 @@ for table_name in $(toml_get_table_names); do
 		module_prop_name_b=${app_args[module_prop_name]}
 		app_args[module_prop_name]="${module_prop_name_b}-arm64"
 		idx=$((idx + 1))
-		build_rv "$(declare -p app_args)" &
+		run_build "${app_args[table]}" "$(declare -p app_args)" &
 		app_args[table]="$table_name (arm-v7a)"
 		app_args[arch]="arm-v7a"
 		app_args[module_prop_name]="${module_prop_name_b}-arm"
 		if ((idx >= PARALLEL_JOBS)); then
-			wait -n
+			wait -n || :
 			idx=$((idx - 1))
 		fi
 		idx=$((idx + 1))
-		build_rv "$(declare -p app_args)" &
+		run_build "${app_args[table]}" "$(declare -p app_args)" &
 	else
 		if [ "${app_args[arch]}" = "arm64-v8a" ]; then
 			app_args[module_prop_name]="${app_args[module_prop_name]}-arm64"
@@ -154,16 +164,21 @@ for table_name in $(toml_get_table_names); do
 			app_args[module_prop_name]="${app_args[module_prop_name]}-arm"
 		fi
 		idx=$((idx + 1))
-		build_rv "$(declare -p app_args)" &
+		run_build "${app_args[table]}" "$(declare -p app_args)" &
 	fi
 done
-wait
+wait || :
+if [ -s "$BUILD_FAILURES" ]; then
+	epr "The following required builds failed:"
+	while IFS= read -r failed_build; do epr "  - $failed_build"; done <"$BUILD_FAILURES"
+	abort "One or more required apps failed. No release will be created."
+fi
 _clean_tmp
 if [ -z "$(ls -A1 "${BUILD_DIR}")" ]; then abort "All builds failed."; fi
 
 log "\nInstall [Microg](https://github.com/ReVanced/GmsCore/releases) for non-root YouTube and YT Music APKs"
 log "Use [zygisk-detach](https://github.com/j-hc/zygisk-detach) to detach YouTube and YT Music modules from Play Store"
-log "\n[revanced-magisk-module](https://github.com/j-hc/revanced-magisk-module)\n"
+log "\n[MorpheModule](https://github.com/KimPig/MorpheModule)\n"
 log "$(cat "$TEMP_DIR"/*/changelog.md)"
 
 SKIPPED=$(cat "$TEMP_DIR"/skipped 2>/dev/null || :)

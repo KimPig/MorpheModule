@@ -3,6 +3,11 @@ MODDIR=$MODPATH
 . "$MODPATH/utils.sh"
 
 ui_print ""
+if [ "$PKG_NAME" = "com.instagram.android" ]; then
+	ui_print "! Instagram Piko settings cannot open in mount mode."
+	ui_print "! Use the non-root APK release when settings are required."
+	ui_print ""
+fi
 if [ -n "$MODULE_ARCH" ] && [ "$MODULE_ARCH" != "$ARCH" ]; then
 	abort "ERROR: Wrong arch
 Your device: $ARCH

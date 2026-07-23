@@ -58,10 +58,16 @@ exclusive-patches = false                                  # exclude all patches
 
 apkmirror-dlurl = "https://www.apkmirror.com/apk/inc/app"
 uptodown-dlurl = "https://spotify.en.uptodown.com/android"
-# direct download url. the url must have point to an apk file with name format shown in this example
+# Direct URLs may point to an APK or APKM bundle. The filename must contain
+# <package>-<version>-<arch>, as shown below.
 direct-dlurl = "https://website/com.google.android.youtube-20.40.45-all.apk"
 
 module-prop-name = "some-app-module"                       # module prop name.
 dpi = "360-480dpi"                                         # used to select apk variant from apkmirror. default: nodpi
 arch = "arm64-v8a"                                         # 'arm64-v8a', 'arm-v7a', 'all', 'both'. 'both' downloads both arm64-v8a and arm-v7a. default: all
 ```
+
+When multiple URLs are configured, the builder tries them in this order:
+`direct` → `archive` → `apkmirror` → `uptodown`. A failed or invalid candidate
+is removed before the next source is attempted. Package name, version, archive
+integrity, and known official signing certificates are validated before patching.

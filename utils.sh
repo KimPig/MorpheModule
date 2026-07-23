@@ -395,8 +395,8 @@ dl_apkmirror() {
 	local url=$1 version=${2// /-} output=$3 arch=$4 dpi=$5
 
 	if [ -f "${output}.apkm" ]; then
-		merge_splits "${output}.apkm" "${output}"
-		return 0
+		merge_splits "${output}.apkm" "${output}" || return 1
+		return
 	fi
 
 	if [ "$arch" = "arm-v7a" ]; then arch="armeabi-v7a"; fi
@@ -490,8 +490,8 @@ dl_archive() {
 	local path version=${version// /}
 
 	if [ -f "${output}.apkm" ]; then
-		merge_splits "${output}.apkm" "$output"
-		return 0
+		merge_splits "${output}.apkm" "$output" || return 1
+		return
 	fi
 
 	path=$(grep -m1 "${version_f#v}-${arch// /}" <<<"$__ARCHIVE_RESP__") || return 1
@@ -590,13 +590,75 @@ replace_app_label() {
 
 check_sig() {
 	local file=$1 pkg_name=$2
-	local sig
-	if grep -q "$pkg_name" sig.txt; then
-		sig=$(java -jar "$APKSIGNER" verify --print-certs "$file" | grep ^Signer | grep SHA-256 | tail -1 | awk '{print $NF}')
-		echo "$pkg_name signature: ${sig}"
-		grep -qFx "$sig $pkg_name" sig.txt
-	fi
+	local cert_output digests digest
+	if ! grep -qE "^[[:xdigit:]]{64} ${pkg_name}$" sig.txt; then return 0; fi
+	cert_output=$(java -jar "$APKSIGNER" verify --print-certs "$file" 2>&1) || return 1
+	digests=$(sed -n 's/^Signer.* certificate SHA-256 digest: //p' <<<"$cert_output" | tr '[:upper:]' '[:lower:]')
+	if [ -z "$digests" ]; then return 1; fi
+	while IFS= read -r digest; do
+		grep -qFx "$digest $pkg_name" sig.txt || return 1
+	done <<<"$digests"
+	echo "$pkg_name signatures: $(paste -sd, <<<"$digests")"
 }
+
+check_package_version() {
+	local file=$1 expected_pkg=$2 expected_version=$3
+	local package_line actual_pkg actual_version
+	package_line=$("$AAPT2" dump badging "$file" 2>/dev/null | grep -m1 "^package: name=") || return 1
+	actual_pkg=${package_line#*name=\'} actual_pkg=${actual_pkg%%\'*}
+	actual_version=${package_line#*versionName=\'} actual_version=${actual_version%%\'*}
+	[ "$actual_pkg" = "$expected_pkg" ] && [ "$actual_version" = "$expected_version" ]
+}
+
+check_apk_arch() {
+	local file=$1 expected_arch=$2 actual_arches
+	if [ "$expected_arch" = "all" ]; then return 0; fi
+	if [ "$expected_arch" = "arm-v7a" ]; then expected_arch="armeabi-v7a"; fi
+	actual_arches=$(unzip -Z1 "$file" 2>/dev/null | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u)
+	# Pure Java/Kotlin APKs legitimately have no native-library directory.
+	if [ -z "$actual_arches" ]; then return 0; fi
+	grep -qFx "$expected_arch" <<<"$actual_arches"
+}
+
+cleanup_stock_candidate() {
+	local output=$1
+	rm -f -- "$output" "${output}.apkm" "${output}-unsigned" "${output}.idsig"
+	rm -rf -- "${output}-zip"
+}
+
+validate_stock_candidate() (
+	local stock_apk=$1 pkg_name=$2 version=$3 arch=$4 verify_dir base_apk sig_op apk_file
+	unzip -tq "$stock_apk" >/dev/null 2>&1 || return 1
+	check_apk_arch "$stock_apk" "$arch" || return 1
+
+	if [ ! -f "${stock_apk}.apkm" ]; then
+		check_package_version "$stock_apk" "$pkg_name" "$version" || return 1
+		check_sig "$stock_apk" "$pkg_name"
+		return
+	fi
+
+	unzip -tq "${stock_apk}.apkm" >/dev/null 2>&1 || return 1
+	verify_dir=$(mktemp -d -p "$TEMP_DIR" stock-verify.XXXXXX) || return 1
+	trap 'rm -rf -- "$verify_dir"' EXIT
+	unzip -jo "${stock_apk}.apkm" '*.apk' -d "$verify_dir" >/dev/null 2>&1 || return 1
+	if [ -f "$verify_dir/base.apk" ]; then
+		base_apk="$verify_dir/base.apk"
+	elif [ -f "$verify_dir/${pkg_name}.apk" ]; then
+		base_apk="$verify_dir/${pkg_name}.apk"
+	else
+		return 1
+	fi
+	check_package_version "$base_apk" "$pkg_name" "$version" || return 1
+
+	local apk_files=("$verify_dir"/*.apk)
+	if [ "${#apk_files[@]}" -eq 0 ]; then return 1; fi
+	for apk_file in "${apk_files[@]}"; do
+		if ! sig_op=$(check_sig "$apk_file" "$pkg_name" 2>&1); then
+			epr "Signature mismatch in bundle entry '$(basename "$apk_file")': $sig_op"
+			return 1
+		fi
+	done
+)
 
 build_rv() {
 	eval "declare -A args=${1#*=}"
@@ -634,7 +696,7 @@ build_rv() {
 
 	if [ -z "$pkg_name" ]; then
 		epr "empty pkg name, not building ${table}."
-		return 0
+		return 1
 	fi
 	pr "Package name of '${table}' is '$pkg_name'"
 	local list_patches
@@ -644,7 +706,7 @@ build_rv() {
 		if ! version=$(get_patch_last_supported_ver "$list_patches" "$pkg_name" \
 			"${args[included_patches]}" "${args[excluded_patches]}" "${args[exclusive_patches]}"); then
 			epr "get_patch_last_supported_ver failed '$list_patches'"
-			return
+			return 1
 		elif [ -z "$version" ]; then get_latest_ver=true; fi
 	elif isoneof "$version_mode" latest beta; then
 		get_latest_ver=true
@@ -660,7 +722,7 @@ build_rv() {
 	fi
 	if [ -z "$version" ]; then
 		epr "empty version, not building ${table}."
-		return 0
+		return 1
 	fi
 
 	if [ "$mode_arg" = module ]; then
@@ -675,45 +737,40 @@ build_rv() {
 	local version_f=${version// /}
 	version_f=${version_f#v}
 	local stock_apk="${TEMP_DIR}/${pkg_name}-${version_f}-${arch_f}.apk"
+	if [ -f "$stock_apk" ] && ! validate_stock_candidate "$stock_apk" "$pkg_name" "$version" "$arch"; then
+		wpr "Discarding an invalid cached stock file for '${table}'"
+		cleanup_stock_candidate "$stock_apk"
+	fi
 	if [ ! -f "$stock_apk" ]; then
 		for dl_p in "${DL_SRCS[@]}"; do
 			if [ -z "${args[${dl_p}_dlurl]}" ]; then continue; fi
+			cleanup_stock_candidate "$stock_apk"
 			pr "Downloading '${table}' from '${dl_p}'"
 			if ! isoneof $dl_p "${tried_dl[@]}"; then
 				if ! get_${dl_p}_resp "${args[${dl_p}_dlurl]}"; then
 					epr "ERROR: Could not get '${table}' from '${dl_p}'"
+					cleanup_stock_candidate "$stock_apk"
 					continue
 				fi
 			fi
 			if ! dl_${dl_p} "${args[${dl_p}_dlurl]}" "$version" "$stock_apk" "$arch" "${args[dpi]}" "$get_latest_ver"; then
 				epr "ERROR: Could not download '${table}' from '${dl_p}' with version '${version}', arch '${arch}', dpi '${args[dpi]}'"
+				cleanup_stock_candidate "$stock_apk"
+				continue
+			fi
+			if ! validate_stock_candidate "$stock_apk" "$pkg_name" "$version" "$arch"; then
+				epr "ERROR: '${dl_p}' returned an invalid package, version, archive, or signature for '${table}'"
+				cleanup_stock_candidate "$stock_apk"
 				continue
 			fi
 			break
 		done
 		if [ ! -f "$stock_apk" ]; then
 			epr "Stock apk not found ($stock_apk)"
-			return 0
+			return 1
 		fi
 	fi
 
-	local sig_op
-	if [ -f "${stock_apk}.apkm" ]; then
-		rm -rf "${stock_apk}-zip" || :
-		unzip -j "${stock_apk}.apkm" -d "${stock_apk}-zip" >/dev/null
-		for a in "${stock_apk}"-zip/*.apk; do
-			if ! sig_op=$(check_sig "$a" "$pkg_name" 2>&1); then
-				epr "Not building $table, apk signature mismatch '$a': $sig_op"
-				return 0
-			fi
-		done
-		rm -rf "${stock_apk}-zip" || :
-	else
-		if ! sig_op=$(check_sig "$stock_apk" "$pkg_name" 2>&1); then
-			epr "Not building $table, apk signature mismatch '$stock_apk': $sig_op"
-			return 0
-		fi
-	fi
 	log "${table}: ${version}"
 
 	local microg_patch
@@ -765,11 +822,11 @@ build_rv() {
 		if [ "${NORB:-}" != true ] || { [ ! -f "$patched_apk" ] && [ ! -f "$apk_output" ]; }; then
 			if ! patch_apk "$stock_apk_to_patch" "$patched_apk" "${patcher_args[*]}" "${args[cli]}" "${args[ptjar]}"; then
 				epr "Building '${table}' failed!"
-				return 0
+				return 1
 			fi
 			if [ -n "${args[app_label]}" ] && ! replace_app_label "$patched_apk" "${args[app_label]}"; then
 				epr "Changing app label for '${table}' failed!"
-				return 0
+				return 1
 			fi
 		fi
 		rm "$stock_apk_to_patch"
@@ -805,29 +862,30 @@ build_rv() {
 		if [ "${args[include_stock]}" != "disable" ]; then
 			mkdir -p "${base_template}/stock/"
 			if [ "${args[include_stock]}" = "merged" ]; then
-				cp -f "$stock_apk" "${base_template}/stock/base.apk"
+				cp -f "$stock_apk" "${base_template}/stock/base.apk" || return 1
 			elif [ "${args[include_stock]}" = "split" ]; then
 				if [ ! -f "${stock_apk}.apkm" ]; then
-					epr "Cannot include as 'split' because stock apk of $table_name is not a bundle"
-					return 0
-				fi
-				if [ "$arch" = "arm64-v8a" ]; then
-					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1
-				elif [ "$arch" = "arm-v7a" ]; then
-					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -x '*arm64_v8a.apk' -d "${base_template}/stock/" >/dev/null 2>&1
-				elif [ "$arch" = "x86" ]; then
-					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*arm64_v8a.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1
-				elif [ "$arch" = "x86_64" ]; then
-					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86.apk' -x '*arm64_v8a.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1
+					wpr "A standalone stock APK was returned for '$table'; including it as stock/base.apk"
+					cp -f "$stock_apk" "${base_template}/stock/base.apk" || return 1
 				else
-					unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -d "${base_template}/stock/" >/dev/null 2>&1
-				fi
-				if [ ! -f "${base_template}/stock/base.apk" ] && [ -f "${base_template}/stock/${pkg_name}.apk" ]; then
-					mv -f "${base_template}/stock/${pkg_name}.apk" "${base_template}/stock/base.apk"
+					if [ "$arch" = "arm64-v8a" ]; then
+						unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1 || return 1
+					elif [ "$arch" = "arm-v7a" ]; then
+						unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -x '*arm64_v8a.apk' -d "${base_template}/stock/" >/dev/null 2>&1 || return 1
+					elif [ "$arch" = "x86" ]; then
+						unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*arm64_v8a.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1 || return 1
+					elif [ "$arch" = "x86_64" ]; then
+						unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86.apk' -x '*arm64_v8a.apk' -x '*armeabi_v7a.apk' -d "${base_template}/stock/" >/dev/null 2>&1 || return 1
+					else
+						unzip -j "${stock_apk}.apkm" '*.apk' -x '*x86_64.apk' -x '*x86.apk' -d "${base_template}/stock/" >/dev/null 2>&1 || return 1
+					fi
+					if [ ! -f "${base_template}/stock/base.apk" ] && [ -f "${base_template}/stock/${pkg_name}.apk" ]; then
+						mv -f "${base_template}/stock/${pkg_name}.apk" "${base_template}/stock/base.apk" || return 1
+					fi
 				fi
 				if [ ! -f "${base_template}/stock/base.apk" ]; then
 					epr "Could not identify the base stock APK for $table"
-					return 0
+					return 1
 				fi
 			fi
 		fi

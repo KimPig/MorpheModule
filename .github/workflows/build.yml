@@ -1,4 +1,4 @@
-name: Build Modules
+name: Build Modules and APKs
 on:
   workflow_call:
     inputs:
@@ -38,7 +38,7 @@ jobs:
           if git checkout origin/update build.md; then
             UPDATE_CFG=$(./build.sh config.toml --config-update)
             if [ "$UPDATE_CFG" ]; then
-              echo "$UPDATE_CFG" > config.json
+              echo "$UPDATE_CFG" >config.json
             fi
           fi
 
@@ -49,24 +49,34 @@ jobs:
         run: |
           TAG=$(gh release list --limit 100 --json tagName --jq \
             '[.[].tagName | select(test("^[0-9]+$")) | tonumber] | max // 0')
-          echo "NEXT_VER_CODE=$((TAG + 1))" >> $GITHUB_OUTPUT
+          echo "NEXT_VER_CODE=$((TAG + 1))" >>"$GITHUB_OUTPUT"
 
-      - name: Build modules/APKs
+      - name: Build modules and APKs
         run: if [ -f "config.json" ]; then ./build.sh config.json; else ./build.sh config.toml; fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: $GITHUB_REPOSITORY
           NEXT_VER_CODE: ${{ steps.next_ver_code.outputs.NEXT_VER_CODE }}
 
+      - name: Verify complete output set
+        shell: bash
+        run: |
+          for APP in youtube-morphe youtube-music-morphe twitter-piko instagram-piko; do
+            compgen -G "build/${APP}-v*.apk" >/dev/null ||
+              { echo "::error::Missing ${APP} APK"; exit 1; }
+            compgen -G "build/${APP}-module-v*.zip" >/dev/null ||
+              { echo "::error::Missing ${APP} module"; exit 1; }
+          done
+
       - name: Get output
         id: get_output
         run: |
           DELIM="$(openssl rand -hex 8)"
-          echo "BUILD_LOG<<${DELIM}" >> "$GITHUB_OUTPUT"
-          cat build.md >> "$GITHUB_OUTPUT"
-          echo "${DELIM}" >> "$GITHUB_OUTPUT"
+          echo "BUILD_LOG<<${DELIM}" >>"$GITHUB_OUTPUT"
+          cat build.md >>"$GITHUB_OUTPUT"
+          echo "${DELIM}" >>"$GITHUB_OUTPUT"
           cp -f build.md build.tmp
-      
+
       - name: Upload release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,11 +90,11 @@ jobs:
             gh release create "$TAG" ./build/* --title "Release" --notes "$BODY"
           fi
 
-      - name: Update modules changelog and update json
-        id: update_config
+      - name: Update module changelogs
         run: |
           git checkout -f update || git switch --discard-changes --orphan update
           cp -f build.tmp build.md
+
           get_update_json() {
             echo "{
             \"version\": \"$1\",
@@ -109,55 +119,16 @@ jobs:
 
           find . -name "*-update.json" | grep . || : >dummy-update.json
 
-      - name: Commit module json changes
+      - name: Commit module changelogs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-      
+
           git add build.md *-update.json
-      
+
           if ! git diff --cached --quiet; then
             git commit -m "Bump version ${{ steps.next_ver_code.outputs.NEXT_VER_CODE }}"
             git push origin HEAD:update
           else
             echo "no changes!"
           fi
-
-      - name: Report to Telegram
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-        if: env.TG_TOKEN != null
-        run: |
-          cd build || { echo "build folder not found"; exit 1; }
-
-          TG_CHAT="@rvc_magisk"
-          NL=$'\n'
-          APKS=""
-          MODULES=""
-          for OUTPUT in *; do
-            DL_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/${{ steps.next_ver_code.outputs.NEXT_VER_CODE }}/${OUTPUT}"
-            if [[ $OUTPUT = *.apk ]]; then
-              APKS+="${NL}📦[${OUTPUT}](${DL_URL})"
-            elif [[ $OUTPUT = *.zip ]]; then
-              MODULES+="${NL}📦[${OUTPUT}](${DL_URL})"
-            fi
-          done
-          MODULES=${MODULES#"$NL"}
-          APKS=${APKS#"$NL"}
-
-          BODY="$(sed 's/^\* \*\*/↪ \*\*/g; s/^\* `/↪ \*\*/g; s/`/\*/g; s/^\* /\↪/g; s/\*\*/\*/g; s/###//g; s/^- /↪ /g; /^==/d;' ../build.md)"
-          MSG="*New build!*
-
-          ${BODY}
-
-          *▼ Download Links:*
-          Modules:
-          ${MODULES}
-
-          APKs:
-          ${APKS}
-          "
-          echo "'$MSG'"
-          MSG=${MSG:0:9450}
-          POST="https://api.telegram.org/bot${TG_TOKEN}/sendMessage"
-          curl -X POST --data-urlencode "parse_mode=Markdown" --data-urlencode "disable_web_page_preview=true" --data-urlencode "text=${MSG}" --data-urlencode "chat_id=${TG_CHAT}" "$POST"
