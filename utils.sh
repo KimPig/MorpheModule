@@ -438,10 +438,12 @@ dl_apkmirror() {
 	fi
 
 	if [ "$arch" = "arm-v7a" ]; then arch="armeabi-v7a"; fi
-	local apkmname
-	apkmname=$($HTMLQ "h1.marginZero" --text <<<"$__APKMIRROR_RESP__")
-	apkmname="${apkmname,,}" apkmname="${apkmname// /-}" apkmname="${apkmname//[^a-z0-9-]/}"
-	url="${url}/${apkmname}-${version//./-}-release/"
+	if [[ "${url%/}" != *-release ]]; then
+		local apkmname
+		apkmname=$($HTMLQ "h1.marginZero" --text <<<"$__APKMIRROR_RESP__")
+		apkmname="${apkmname,,}" apkmname="${apkmname// /-}" apkmname="${apkmname//[^a-z0-9-]/}"
+		url="${url}/${apkmname}-${version//./-}-release/"
+	fi
 	if ! python3 scripts/apkmirror.py download "$url" "$output" --arch "$arch" --dpi "$dpi"; then
 		return 1
 	fi
@@ -470,13 +472,18 @@ get_apkmirror_vers() {
 }
 get_apkmirror_pkg_name() { sed -n 's;.*id=\(.*\)" class="accent_color.*;\1;p' <<<"$__APKMIRROR_RESP__"; }
 get_apkmirror_resp() {
+	if [[ "${1%/}" == *-release ]]; then
+		__APKMIRROR_RESP__=""
+		__APKMIRROR_CAT__=""
+		return 0
+	fi
 	__APKMIRROR_RESP__=$(apkmirror_req "${1}") || return 1
 	__APKMIRROR_CAT__="${1##*/}"
 }
 
 # -------------------- uptodown --------------------
 get_uptodown_resp() {
-	__UPTODOWN_RESP__=$(req "${1}/versions" -) || return 1
+	__UPTODOWN_RESP__=$(req "${1}/versions" -) || __UPTODOWN_RESP__=$(req "${1}" -) || return 1
 	__UPTODOWN_RESP_PKG__=$(req "${1}/download" -) || return 1
 }
 get_uptodown_vers() { $HTMLQ --text ".version" <<<"$__UPTODOWN_RESP__"; }
@@ -493,9 +500,9 @@ dl_uptodown() {
 	data_code=$($HTMLQ "#detail-app-name" --attribute data-code <<<"$__UPTODOWN_RESP__")
 	local versionURL=""
 	local is_bundle=false
-	# Popular apps can have dozens of variants for every release. Do not assume
-	# that the requested version is present in the first 20 API pages.
-	for ((i = 1; i <= 100; i += 1)); do
+	# Popular apps can have thousands of variants. Instagram 439, for example,
+	# currently appears after page 100 in Uptodown's versions API.
+	for ((i = 1; i <= 500; i += 1)); do
 		resp=$(req "${uptodown_dlurl}/apps/${data_code}/versions/${i}" -) || continue
 		page_count=$(jq -e -r '.data | length' <<<"$resp") || continue
 		if [ "$page_count" -eq 0 ]; then break; fi
