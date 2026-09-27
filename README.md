@@ -4,6 +4,8 @@
 
 KimPig의 YouTube, YouTube Music, Twitter 및 Instagram용 패치 빌드입니다. 각 빌드는 KernelSU/Magisk 모듈과 일반 설치 APK를 모두 생성하며, 결과물은 [Releases](https://github.com/KimPig/MorpheModule/releases)에서 받을 수 있습니다.
 
+GitHub Actions의 CI는 자동 실행되지 않습니다. 필요할 때 `CI` workflow의 `Run workflow`를 누르면 네 앱을 모두 새 Release로 빌드합니다.
+
 ## 빌드 구성
 
 | 앱 | 패치 | 버전 | 추가 옵션 | 산출물 |
