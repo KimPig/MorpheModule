@@ -6,6 +6,12 @@ on:
       - main
     paths:
       - config.toml
+      - build.sh
+      - utils.sh
+      - requirements-apkmirror.txt
+      - scripts/**
+      - .github/workflows/build.yml
+      - .github/workflows/ci.yml
   schedule:
     - cron: "0 16 * * *"
 
