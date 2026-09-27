@@ -10,12 +10,12 @@ KimPig의 YouTube, YouTube Music, Twitter 및 Instagram용 패치 빌드입니�
 |---|---|---|---|---|
 | YouTube | Morphe stable | 패치가 지원하는 최신 버전 | 기본 패치 | APK + 모듈 |
 | YouTube Music | Morphe stable | 패치가 지원하는 최신 버전 | 기본 패치, arm64 | APK + 모듈 |
-| Twitter | Piko 3.8.0-dev.6 | 12.7.1-release.0 | `Bring back twitter`, 앱 이름 `Twitter` | APK + 모듈 |
+| Twitter | Piko 3.9.0 stable | 12.19.1-release.0 | `Bring back twitter`, `Block update screen`, 앱 이름 `Twitter` | APK + 모듈 |
 | Instagram | Piko 3.8.0-dev.6 | 435.0.0.37.76 | 기본 패치, arm64 | APK + 모듈 |
 
-Twitter 12.7.1은 Piko가 직접 지원하므로 X-Shim을 사용하지 않습니다. 모듈에는 공식 stock split APK가 포함되어 있어 앱이 없거나 버전이 다를 때 플래시 과정에서 맞는 버전을 설치합니다.
+Twitter 12.19.1은 Piko가 직접 지원하므로 X-Shim을 사용하지 않습니다. Piko 3.9.0의 기본 패치인 `Block update screen`도 적용됩니다. 모듈에는 공식 stock split APK가 포함되어 있어 앱이 없거나 버전이 다를 때 플래시 과정에서 맞는 버전을 설치합니다.
 
-Twitter와 Instagram은 12.2 stable + X-Shim 호환 문제가 해결될 때까지 검증할 Piko 개발 릴리스를 명시적으로 고정해서 사용합니다.
+Instagram은 기존에 검증한 Piko 개발 릴리스를 계속 사용합니다.
 
 ## Instagram 모듈 제한
 
@@ -27,12 +27,13 @@ Piko는 설정, 백업, 복원 및 폴더 선택용 Activity를 patched Manifest
 
 ## Stock APK 다운로드 순서
 
-Twitter와 Instagram은 다음 순서로 stock APK를 가져옵니다.
+Twitter는 다음 순서로 stock APK를 가져옵니다.
 
-1. 이 저장소의 `stock-apks` Release
-2. APKMirror
-3. Uptodown
-4. 모두 실패하거나 패키지·버전·공식 서명 검증에 실패하면 전체 workflow 중지
+1. APKMirror
+2. Uptodown
+3. 모두 실패하거나 패키지·버전·공식 서명 검증에 실패하면 전체 workflow 중지
+
+Instagram은 이 저장소의 `stock-apks` Release를 먼저 사용한 뒤 APKMirror, Uptodown 순서로 시도합니다.
 
 실패한 공급원이 남긴 부분 파일은 다음 공급원으로 넘기지 않습니다. Workflow 실패 이메일은 GitHub 계정의 Actions 알림 설정이 활성화된 경우에만 전송됩니다.
 

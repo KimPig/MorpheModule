@@ -1,6 +1,11 @@
 name: CI
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - config.toml
   schedule:
     - cron: "0 16 * * *"
 
