@@ -1,3 +1,4 @@
+Instagram-Piko: 439.0.0.37.89  
 Twitter-Piko: 12.19.1-release.0  
 YouTube-Morphe: 21.16.256  
 YouTube-Music-Morphe: 9.15.51  
@@ -13,6 +14,3 @@ Patches: crimera/patches-3.9.0.mpp
 CLI: MorpheApp/morphe-desktop-1.17.0-all.jar  
 Patches: MorpheApp/patches-1.44.0.mpp  
 [Changelog](https://github.com/MorpheApp/morphe-patches/releases/tag/v1.44.0)  
-
-Skipped:  
-Patches: crimera/patches-3.8.0-dev.6.mpp    
