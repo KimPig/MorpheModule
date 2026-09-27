@@ -15,9 +15,6 @@ fi
 jq --version >/dev/null || abort "\`jq\` is not installed. install it with 'apt install jq' or equivalent"
 java --version >/dev/null || abort "\`openjdk 17\` is not installed. install it with 'apt install openjdk-17-jre' or equivalent"
 zip --version >/dev/null || abort "\`zip\` is not installed. install it with 'apt install zip' or equivalent"
-python3 -c "import bs4, requests" >/dev/null 2>&1 ||
-	abort "\`beautifulsoup4\` and \`requests\` are not installed. run 'python3 -m pip install -r requirements-apkmirror.txt'"
-
 set_prebuilts
 
 vtf() { if ! isoneof "${1}" "true" "false"; then abort "ERROR: '${1}' is not a valid option for '${2}': only true or false is allowed"; fi; }
@@ -41,6 +38,9 @@ if [ "${2-}" = "--config-update" ]; then
 	config_update
 	exit 0
 fi
+
+python3 -c "import bs4, requests" >/dev/null 2>&1 ||
+	abort "\`beautifulsoup4\` and \`requests\` are not installed. run 'python3 -m pip install -r requirements-apkmirror.txt'"
 
 : >build.md
 BUILD_FAILURES="${TEMP_DIR}/build-failures"
