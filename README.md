@@ -35,7 +35,7 @@ Twitter는 다음 순서로 stock APK를 가져옵니다.
 2. Uptodown
 3. 모두 실패하거나 패키지·버전·공식 서명 검증에 실패하면 전체 workflow 중지
 
-Instagram은 [Ravi-Kishor/apk-archive](https://github.com/Ravi-Kishor/apk-archive)의 439.0.0.37.89 arm64-v8a APKM을 먼저 사용하고, 실패하면 APKMirror와 Uptodown을 차례로 시도합니다. 모든 후보는 패키지명, 버전 및 공식 Instagram 서명을 검증한 뒤에만 사용합니다.
+Instagram은 [Internet Archive의 APKMirror 기반 미러](https://archive.org/details/andrews-apks)에 보관된 439.0.0.37.89 arm64-v8a APKM을 먼저 사용하고, 실패하면 APKMirror와 Uptodown을 차례로 시도합니다. 모든 후보는 패키지명, 버전 및 공식 Instagram 서명을 검증한 뒤에만 사용합니다.
 
 실패한 공급원이 남긴 부분 파일은 다음 공급원으로 넘기지 않습니다. Workflow 실패 이메일은 GitHub 계정의 Actions 알림 설정이 활성화된 경우에만 전송됩니다.
 
