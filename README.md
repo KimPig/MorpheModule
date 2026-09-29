@@ -18,6 +18,7 @@ GitHub Actions의 CI는 자동 실행되지 않습니다. 필요할 때 `CI` wor
 Twitter 12.19.1은 Piko가 직접 지원하므로 X-Shim을 사용하지 않습니다. Piko 3.9.0의 기본 패치인 `Block update screen`도 적용됩니다. 모듈에는 공식 stock split APK가 포함되어 있어 앱이 없거나 버전이 다를 때 플래시 과정에서 맞는 버전을 설치합니다.
 
 Instagram도 Piko 3.9.0 stable이 지원하는 439.0.0.37.89를 사용합니다.
+Instagram 빌드는 Theme 패치의 리소스 누락 문제를 수정한 Morphe CLI v1.17.1-dev.2를 사용합니다.
 
 ## Instagram 모듈 제한
 
